@@ -54,6 +54,13 @@ Options:
   -m --merge                Merge overlapping regions before split.
 ```
 
+# Performance
+
+A comparison of real vs estimate.
+
+![benchmark](https://user-images.githubusercontent.com/7906289/141524002-b88fa0fb-ef5f-4e6b-88cf-c3b33681ab4e.png)
+
+
 # Credit
 * Max Levine [@mflevine](https://github.com/mflevine)
 * Inspired by [indexcov](https://github.com/brentp/goleft/tree/master/indexcov) by Brent Pederson [@brentp](https://github.com/brentp)
