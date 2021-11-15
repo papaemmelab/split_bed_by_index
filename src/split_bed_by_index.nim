@@ -99,6 +99,8 @@ proc readIndex(fs: FileStream, sizes: var seq[seq[int]], total_bytes: var seq[in
     # read index and set sizes, total_bytes, and total_reads
     discard fs.readStr(4)
     var n_ref = fs.readInt32()
+    var last_read = 0
+    var first_read = 0
     for chr in 0..<n_ref:
         sizes.add(newSeq[int]())
         var n_bin = fs.readInt32()
@@ -108,16 +110,24 @@ proc readIndex(fs: FileStream, sizes: var seq[seq[int]], total_bytes: var seq[in
             for chunk in 0..<n_chunk:
                 var chunk_beg = fs.readUint64()
                 var chunk_end = fs.readUint64()
-                if bin == 37450 and chunk == 1:
-                    total_reads.add(int(chunk_beg) + int(chunk_end))
+                if bin == 37450:
+                    if chunk == 0:
+                        first_read = int(chunk_beg)
+                        last_read = int(chunk_end)
+                    elif chunk == 1:
+                        total_reads.add(int(chunk_beg) + int(chunk_end))
         if total_reads.len < chr+1:
             total_reads.add(0)
         var n_intv = fs.readInt32()
-        var offset = 0
+        var offset = first_read
         for intv in 0..<n_intv:
             var ioffset = fs.readUint64()
-            if offset != 0:
+            if ioffset == 0:
+                ioffset = offset.uint64
+            if intv != 0:
                 sizes[chr].add(int(ioffset) - int(offset))
+                if intv == (n_intv - 1):
+                    sizes[chr].add(int(last_read) - int(ioffset))
             offset = int(ioffset)
         total_bytes.add(sum(sizes[chr]))
     var n_no_coor = fs.readUint64()
@@ -133,8 +143,17 @@ proc splitRegion(chrom: string, contig: int, start_pos: int, end_pos: int, sizes
         let est_reads = float(chunk)/bytes_per_read
         counter += est_reads
         if counter > float(count):
-            echo chrom & ":" & $pos & "-" & $((chunk_ind+1)*chunk_size - 1) & "\t" & $counter
-            out_bed.writeLine(chrom & "\t" & $pos & "\t" & $((chunk_ind+1)*chunk_size - 1) & "\t" & $counter)
+            if counter > 1.5*float(count) and ceil(counter/float(count)).int > 1:
+                let splits = ceil(counter/float(count)).int
+                let size = (((chunk_ind+1)*chunk_size - pos)/splits).int
+                for split in 0..<splits-1:
+                    echo chrom & ":" & $(pos + split * size) & "-" & $((pos + (split + 1) * size) - 1) & "\t" & $(counter/splits.float)
+                    out_bed.writeLine(chrom & "\t" & $(pos + split * size) & "\t" & $((pos + (split + 1) * size) - 1) & "\t" & $(counter/splits.float))
+                echo chrom & ":" & $(pos + (splits-1) * size) & "-" & $((chunk_ind+1)*chunk_size - 1) & "\t" & $(counter/splits.float)
+                out_bed.writeLine(chrom & "\t" & $(pos + (splits-1) * size) & "\t" & $((chunk_ind+1)*chunk_size - 1) & "\t" & $(counter/splits.float))
+            else:
+                echo chrom & ":" & $pos & "-" & $((chunk_ind+1)*chunk_size - 1) & "\t" & $counter
+                out_bed.writeLine(chrom & "\t" & $pos & "\t" & $((chunk_ind+1)*chunk_size - 1) & "\t" & $counter)
             pos = (chunk_ind+1)*chunk_size
             counter = 0.0
     echo chrom & ":" & $pos & "-" & $end_pos & "\t" & $counter
@@ -203,7 +222,7 @@ proc main() =
     readIndex(idx, sizes, total_bytes, total_reads)
 
     # calculate average bytes per read
-    let bytes_per_read = sum(total_bytes/total_reads)/float((total_bytes/total_reads).len)
+    let bytes_per_read = sum(total_bytes[0 .. 20]/total_reads[0 .. 20])/float(total_reads[0 .. 20].len)
 
     # loop through regions and split
     for target in targets(bam.hdr):
